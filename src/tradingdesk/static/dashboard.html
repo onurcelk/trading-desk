@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Desk</title>
+<style>
+/* ---------------------------------------------------------------- tokens */
+:root {
+  color-scheme: light;
+  --surface-1:      #fcfcfb;
+  --page:           #f9f9f7;
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #898781;
+  --gridline:       #e1e0d9;
+  --baseline:       #c3c2b7;
+  --border:         rgba(11,11,11,0.10);
+
+  /* diverging poles — validated blue<->red, both modes, no warnings */
+  --pos:            #2a78d6;
+  --neg:            #e34948;
+  --series-1:       #2a78d6;
+  /* Lightest ordinal step must still clear 2:1 on the light surface. */
+  --series-1-soft:  #86b6ef;
+  --series-1-fill:  rgba(42,120,214,0.10);
+  --neutral-mid:    #f0efec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --pos:            #3987e5;
+    --neg:            #e66767;
+    --series-1:       #3987e5;
+    --series-1-soft:  #256abf;
+    --series-1-fill:  rgba(57,135,229,0.14);
+    --neutral-mid:    #383835;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1:      #1a1a19;
+  --page:           #0d0d0d;
+  --text-primary:   #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #898781;
+  --gridline:       #2c2c2a;
+  --baseline:       #383835;
+  --border:         rgba(255,255,255,0.10);
+  --pos:            #3987e5;
+  --neg:            #e66767;
+  --series-1:       #3987e5;
+  --series-1-soft:  #256abf;
+  --series-1-fill:  rgba(57,135,229,0.14);
+  --neutral-mid:    #383835;
+}
+
+/* ----------------------------------------------------------------- base */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 72px; }
+
+header.top {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+header.top h1 { font-size: 19px; font-weight: 640; margin: 0; letter-spacing: -0.01em; }
+header.top .meta { color: var(--text-muted); font-size: 13px; }
+header.top .spacer { flex: 1; }
+
+button.ghost {
+  font: inherit; font-size: 13px; color: var(--text-secondary);
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 7px; padding: 5px 11px; cursor: pointer;
+}
+button.ghost:hover { color: var(--text-primary); }
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+section { margin-bottom: 22px; }
+h2.sec {
+  font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin: 0 0 12px;
+}
+.note { color: var(--text-muted); font-size: 12.5px; margin: 10px 0 0; }
+
+/* -------------------------------------------------------------- kpi row */
+.hero { display: flex; align-items: flex-end; gap: 26px; flex-wrap: wrap; }
+.hero .figure { font-size: 50px; line-height: 1; font-weight: 620; letter-spacing: -0.025em; }
+.hero .figure-label { color: var(--text-muted); font-size: 12.5px; margin-bottom: 7px; }
+
+.kpis {
+  display: grid; gap: 10px; margin-top: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+}
+.tile {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px;
+}
+.tile .label { color: var(--text-muted); font-size: 12px; margin-bottom: 5px; }
+.tile .value { font-size: 21px; font-weight: 600; letter-spacing: -0.015em; }
+
+/* Sign + arrow always accompany the color, so P&L never reads by hue alone. */
+.pos { color: var(--pos); }
+.neg { color: var(--neg); }
+.flat { color: var(--text-secondary); }
+
+/* -------------------------------------------------------------- charts */
+.chart-host { width: 100%; }
+svg { display: block; overflow: visible; }
+svg text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.tick { fill: var(--text-muted); }
+.grid { stroke: var(--gridline); stroke-width: 1; }
+.axis { stroke: var(--baseline); stroke-width: 1; }
+.dlabel { fill: var(--text-secondary); font-size: 11.5px; font-weight: 550; }
+
+.legend { display: flex; gap: 16px; margin: 0 0 12px; flex-wrap: wrap; }
+.legend .item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); }
+.legend .swatch { width: 10px; height: 10px; border-radius: 3px; }
+
+.tooltip {
+  position: fixed; z-index: 50; pointer-events: none; opacity: 0;
+  transition: opacity .1s;
+  background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 11px; font-size: 12.5px; line-height: 1.45;
+  box-shadow: 0 6px 22px rgba(0,0,0,.16); max-width: 280px;
+}
+.tooltip .tt-head { font-weight: 600; margin-bottom: 3px; }
+.tooltip .tt-row { color: var(--text-secondary); }
+
+/* -------------------------------------------------------------- tables */
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th {
+  text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 0 12px 8px 0; white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 9px 12px 9px 0; border-bottom: 1px solid var(--gridline);
+  white-space: nowrap; vertical-align: top;
+}
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 18px; }
+tr:last-child td { border-bottom: none; }
+.sym { font-weight: 600; }
+.muted { color: var(--text-muted); }
+.wrapcell { white-space: normal; min-width: 260px; color: var(--text-secondary); }
+
+.chip {
+  display: inline-block; padding: 1px 7px; border-radius: 99px;
+  font-size: 11.5px; font-weight: 600; border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.chip.up { color: var(--pos); border-color: var(--pos); }
+.chip.down { color: var(--neg); border-color: var(--neg); }
+
+.filters { display: flex; gap: 7px; margin-bottom: 12px; flex-wrap: wrap; }
+.filters button[aria-pressed="true"] { color: var(--text-primary); border-color: var(--baseline); }
+
+.two-col { display: grid; gap: 22px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .two-col { grid-template-columns: 1.15fr 1fr; } }
+
+.empty { color: var(--text-muted); font-size: 13px; padding: 22px 0; text-align: center; }
+details.rationale summary { cursor: pointer; color: var(--text-muted); font-size: 12px; }
+pre.report {
+  white-space: pre-wrap; font: 12.5px/1.6 ui-monospace, "Cascadia Code", Consolas, monospace;
+  background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px; max-height: 420px; overflow: auto; margin: 10px 0 0;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>Trading Desk</h1>
+    <span class="meta" id="asof">loading…</span>
+    <span class="spacer"></span>
+    <button class="ghost" id="refresh">Refresh</button>
+    <button class="ghost" id="theme">Theme</button>
+  </header>
+
+  <section>
+    <div class="card">
+      <div class="hero">
+        <div>
+          <div class="figure-label">Equity</div>
+          <div class="figure" id="equity">—</div>
+        </div>
+        <div id="equity-delta" style="padding-bottom:6px"></div>
+      </div>
+      <div class="kpis" id="kpis"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Equity curve</h2>
+    <div class="card">
+      <div class="chart-host" id="curve"></div>
+    </div>
+  </section>
+
+  <div class="two-col">
+    <section>
+      <h2 class="sec">Analyst edge per call</h2>
+      <div class="card">
+        <div class="chart-host" id="edge"></div>
+        <p class="note">Mean return earned in the direction called. Hit rate alone
+          rewards an analyst who only calls the obvious.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="sec">Calibration</h2>
+      <div class="card">
+        <div class="chart-host" id="calibration"></div>
+        <p class="note">Where the marks separate, stated confidence and reality
+          disagree. Claimed right of actual means overconfident.</p>
+      </div>
+    </section>
+  </div>
+
+  <section>
+    <h2 class="sec">Positions</h2>
+    <div class="card"><div class="scroll" id="positions"></div></div>
+  </section>
+
+  <section>
+    <h2 class="sec">Predictions</h2>
+    <div class="card">
+      <div class="filters" id="pred-filters">
+        <button class="ghost" data-f="open" aria-pressed="true">Open</button>
+        <button class="ghost" data-f="resolved" aria-pressed="false">Resolved</button>
+        <button class="ghost" data-f="all" aria-pressed="false">All</button>
+      </div>
+      <div class="scroll" id="predictions"></div>
+    </div>
+  </section>
+
+  <div class="two-col">
+    <section>
+      <h2 class="sec">Fills</h2>
+      <div class="card"><div class="scroll" id="fills"></div></div>
+    </section>
+    <section>
+      <h2 class="sec">Artifacts</h2>
+      <div class="card" id="reports"></div>
+    </section>
+  </div>
+
+</div>
+<div class="tooltip" id="tt"></div>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const tt = $("tt");
+let STATE = null;
+let predFilter = "open";
+
+/* ------------------------------------------------------------ formatting */
+const money = (v, d = 2) =>
+  v == null ? "—" : (v < 0 ? "-$" : "$") + Math.abs(v).toLocaleString(undefined,
+    { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = (v, d = 1) => v == null ? "—" : (v * 100).toFixed(d) + "%";
+const signedPct = (v, d = 1) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(d) + "%";
+const arrow = (v) => v == null || v === 0 ? "" : (v > 0 ? "↑ " : "↓ ");
+const cls = (v) => v == null || v === 0 ? "flat" : v > 0 ? "pos" : "neg";
+
+/* Colour is never the only cue: an arrow and an explicit sign ride along. */
+function delta(v, fmt = signedPct) {
+  if (v == null) return '<span class="flat">—</span>';
+  return `<span class="${cls(v)}">${arrow(v)}${fmt(v)}</span>`;
+}
+
+function showTip(evt, html) {
+  tt.innerHTML = html;
+  tt.style.opacity = "1";
+  const pad = 14, r = tt.getBoundingClientRect();
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  if (x + r.width > innerWidth - 8) x = evt.clientX - r.width - pad;
+  if (y + r.height > innerHeight - 8) y = evt.clientY - r.height - pad;
+  tt.style.left = x + "px";
+  tt.style.top = y + "px";
+}
+const hideTip = () => { tt.style.opacity = "0"; };
+
+const svgEl = (n, attrs = {}) => {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", n);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+};
+
+/* ---------------------------------------------------------- equity curve */
+function drawCurve(host, curve, startingCash) {
+  host.innerHTML = "";
+  if (!curve || curve.length < 2) {
+    host.innerHTML = `<div class="empty">Not enough marks yet — the curve needs at least two
+      end-of-day stamps. Run <code>tradingdesk trade</code> or the trader's
+      <code>book_mark_to_market</code> on consecutive sessions.</div>`;
+    return;
+  }
+  const W = host.clientWidth || 720, H = 260;
+  const M = { t: 14, r: 16, b: 26, l: 62 };
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+
+  const vals = curve.map(d => d.equity).concat([startingCash]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const padY = (hi - lo) * 0.15 || Math.max(hi * 0.01, 1);
+  lo -= padY; hi += padY;
+
+  const X = i => M.l + (curve.length === 1 ? iw / 2 : (i / (curve.length - 1)) * iw);
+  const Y = v => M.t + ih - ((v - lo) / (hi - lo)) * ih;
+
+  const svg = svgEl("svg", { width: W, height: H, role: "img",
+    "aria-label": "Equity over time against the starting balance" });
+
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + (i / 4) * (hi - lo), y = Y(v);
+    svg.appendChild(svgEl("line", { x1: M.l, x2: W - M.r, y1: y, y2: y, class: "grid" }));
+    const t = svgEl("text", { x: M.l - 9, y: y + 4, "text-anchor": "end", class: "tick" });
+    t.textContent = "$" + Math.round(v).toLocaleString();
+    svg.appendChild(t);
+  }
+
+  /* Starting balance as an explicit reference — the curve is read against it. */
+  const y0 = Y(startingCash);
+  svg.appendChild(svgEl("line", { x1: M.l, x2: W - M.r, y1: y0, y2: y0,
+    stroke: "var(--baseline)", "stroke-width": 1, "stroke-dasharray": "4 4" }));
+  const lbl = svgEl("text", { x: W - M.r, y: y0 - 6, "text-anchor": "end", class: "tick" });
+  lbl.textContent = "start";
+  svg.appendChild(lbl);
+
+  const line = curve.map((d, i) => `${i ? "L" : "M"}${X(i)},${Y(d.equity)}`).join("");
+  svg.appendChild(svgEl("path", {
+    d: `${line}L${X(curve.length - 1)},${M.t + ih}L${X(0)},${M.t + ih}Z`,
+    fill: "var(--series-1-fill)", stroke: "none" }));
+  svg.appendChild(svgEl("path", { d: line, fill: "none", stroke: "var(--series-1)",
+    "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+
+  [0, curve.length - 1].forEach(i => {
+    const t = svgEl("text", { x: X(i), y: H - 8, class: "tick",
+      "text-anchor": i === 0 ? "start" : "end" });
+    t.textContent = curve[i].as_of;
+    svg.appendChild(t);
+  });
+
+  const cross = svgEl("line", { y1: M.t, y2: M.t + ih, class: "axis", opacity: 0 });
+  const dot = svgEl("circle", { r: 4.5, fill: "var(--series-1)",
+    stroke: "var(--surface-1)", "stroke-width": 2, opacity: 0 });
+  svg.appendChild(cross); svg.appendChild(dot);
+
+  const hit = svgEl("rect", { x: M.l, y: M.t, width: iw, height: ih, fill: "transparent" });
+  hit.addEventListener("mousemove", (e) => {
+    const bx = svg.getBoundingClientRect();
+    const rel = (e.clientX - bx.left - M.l) / iw;
+    const i = Math.max(0, Math.min(curve.length - 1, Math.round(rel * (curve.length - 1))));
+    const d = curve[i];
+    cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i));
+    cross.setAttribute("opacity", 1);
+    dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(d.equity));
+    dot.setAttribute("opacity", 1);
+    showTip(e, `<div class="tt-head">${d.as_of}</div>
+      <div class="tt-row">Equity ${money(d.equity)}</div>
+      <div class="tt-row">Cash ${money(d.cash)}</div>
+      <div class="tt-row">vs start ${signedPct(d.equity / startingCash - 1, 2)}</div>`);
+  });
+  hit.addEventListener("mouseleave", () => {
+    hideTip(); cross.setAttribute("opacity", 0); dot.setAttribute("opacity", 0);
+  });
+  svg.appendChild(hit);
+  host.appendChild(svg);
+}
+
+/* ------------------------------------------------- analyst edge (diverging) */
+function drawEdge(host, rows) {
+  host.innerHTML = "";
+  const data = rows.filter(r => r.edge != null);
+  if (!data.length) {
+    host.innerHTML = `<div class="empty">No resolved calls yet. Edge appears once a
+      prediction's horizon has elapsed and it has been graded.</div>`;
+    return;
+  }
+  const W = host.clientWidth || 520;
+  const rowH = 40, M = { t: 8, r: 54, b: 24, l: 132 };
+  const H = M.t + data.length * rowH + M.b;
+  const iw = W - M.l - M.r;
+
+  const mx = Math.max(...data.map(d => Math.abs(d.edge))) * 1.35 || 0.01;
+  const X = v => M.l + iw / 2 + (v / mx) * (iw / 2);
+  const zero = X(0);
+
+  const svg = svgEl("svg", { width: W, height: H, role: "img",
+    "aria-label": "Mean return per call by analyst, above and below zero" });
+
+  data.forEach((d, i) => {
+    const y = M.t + i * rowH + rowH / 2;
+    const x = X(d.edge), positive = d.edge >= 0;
+    const w = Math.max(2, Math.abs(x - zero));
+    const barH = 17;
+
+    const name = svgEl("text", { x: M.l - 12, y: y + 4, "text-anchor": "end",
+      class: "dlabel" });
+    name.textContent = d.agent.length > 18 ? d.agent.slice(0, 17) + "…" : d.agent;
+    svg.appendChild(name);
+
+    /* 4px rounded outer end, square against the zero baseline. */
+    const r = 4, x0 = positive ? zero : zero - w, top = y - barH / 2, bot = y + barH / 2;
+    const path = positive
+      ? `M${x0},${top}H${x0 + w - r}Q${x0 + w},${top} ${x0 + w},${top + r}V${bot - r}Q${x0 + w},${bot} ${x0 + w - r},${bot}H${x0}Z`
+      : `M${zero},${top}H${x0 + r}Q${x0},${top} ${x0},${top + r}V${bot - r}Q${x0},${bot} ${x0 + r},${bot}H${zero}Z`;
+    const bar = svgEl("path", { d: path, fill: positive ? "var(--pos)" : "var(--neg)" });
+    svg.appendChild(bar);
+
+    const val = svgEl("text", {
+      x: positive ? x + 8 : x - 8, y: y + 4,
+      "text-anchor": positive ? "start" : "end", class: "dlabel" });
+    val.textContent = (d.edge > 0 ? "+" : d.edge < 0 ? "−" : "") +
+      Math.abs(d.edge * 100).toFixed(2) + "%";
+    svg.appendChild(val);
+
+    const hit = svgEl("rect", { x: M.l, y: y - rowH / 2, width: iw, height: rowH, fill: "transparent" });
+    hit.addEventListener("mousemove", (e) => showTip(e,
+      `<div class="tt-head">${d.agent}</div>
+       <div class="tt-row">Edge per call ${signedPct(d.edge, 2)}</div>
+       <div class="tt-row">Hit rate ${pct(d.hit_rate)}</div>
+       <div class="tt-row">Brier ${d.mean_brier == null ? "—" : d.mean_brier.toFixed(3)}</div>
+       <div class="tt-row">${d.resolved} resolved · ${d.open} open</div>`));
+    hit.addEventListener("mouseleave", hideTip);
+    svg.appendChild(hit);
+  });
+
+  svg.appendChild(svgEl("line", { x1: zero, x2: zero, y1: M.t, y2: H - M.b, class: "axis" }));
+  const z = svgEl("text", { x: zero, y: H - 8, "text-anchor": "middle", class: "tick" });
+  z.textContent = "0%";
+  svg.appendChild(z);
+  host.appendChild(svg);
+}
+
+/* ------------------------------------------------- calibration (dumbbell) */
+function drawCalibration(host, bands) {
+  host.innerHTML = "";
+  if (!bands || !bands.length) {
+    host.innerHTML = `<div class="empty">Calibration needs graded calls across at
+      least one confidence band.</div>`;
+    return;
+  }
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  legend.innerHTML =
+    `<span class="item"><span class="swatch" style="background:var(--series-1-soft)"></span>Stated confidence</span>
+     <span class="item"><span class="swatch" style="background:var(--series-1)"></span>Actual hit rate</span>`;
+  host.appendChild(legend);
+
+  const W = host.clientWidth || 520;
+  const rowH = 42, M = { t: 26, r: 62, b: 26, l: 92 };
+  const H = M.t + bands.length * rowH + M.b;
+  const iw = W - M.l - M.r;
+  const X = v => M.l + v * iw;
+
+  const svg = svgEl("svg", { width: W, height: H, role: "img",
+    "aria-label": "Stated confidence versus actual hit rate by confidence band" });
+
+  const gapHead = svgEl("text", { x: W - M.r + 8, y: 12, "text-anchor": "start", class: "tick" });
+  gapHead.textContent = "gap (pts)";
+  svg.appendChild(gapHead);
+
+  [0, 0.25, 0.5, 0.75, 1].forEach(v => {
+    svg.appendChild(svgEl("line", { x1: X(v), x2: X(v), y1: M.t, y2: H - M.b, class: "grid" }));
+    const t = svgEl("text", { x: X(v), y: H - 8, "text-anchor": "middle", class: "tick" });
+    t.textContent = (v * 100) + "%";
+    svg.appendChild(t);
+  });
+
+  bands.forEach((b, i) => {
+    const y = M.t + i * rowH + rowH / 2;
+    const xs = X(b.stated_confidence), xa = X(b.actual_hit_rate);
+
+    const lab = svgEl("text", { x: M.l - 12, y: y + 4, "text-anchor": "end", class: "dlabel" });
+    lab.textContent = b.confidence_band;
+    svg.appendChild(lab);
+
+    svg.appendChild(svgEl("line", { x1: xs, x2: xa, y1: y, y2: y,
+      stroke: "var(--baseline)", "stroke-width": 2, "stroke-linecap": "round" }));
+    /* 2px surface ring keeps the marks legible where they overlap. */
+    svg.appendChild(svgEl("circle", { cx: xs, cy: y, r: 5.5, fill: "var(--series-1-soft)",
+      stroke: "var(--surface-1)", "stroke-width": 2 }));
+    svg.appendChild(svgEl("circle", { cx: xa, cy: y, r: 5.5, fill: "var(--series-1)",
+      stroke: "var(--surface-1)", "stroke-width": 2 }));
+
+    const gap = b.actual_hit_rate - b.stated_confidence;
+    const g = svgEl("text", { x: W - M.r + 8, y: y + 4, "text-anchor": "start", class: "dlabel" });
+    g.textContent = (gap > 0 ? "+" : gap < 0 ? "−" : "") + Math.abs(gap * 100).toFixed(0);
+    svg.appendChild(g);
+
+    const hit = svgEl("rect", { x: M.l, y: y - rowH / 2, width: iw, height: rowH, fill: "transparent" });
+    hit.addEventListener("mousemove", (e) => showTip(e,
+      `<div class="tt-head">${b.confidence_band} band</div>
+       <div class="tt-row">${b.count} graded call${b.count === 1 ? "" : "s"}</div>
+       <div class="tt-row">Claimed ${pct(b.stated_confidence)}</div>
+       <div class="tt-row">Actual ${pct(b.actual_hit_rate)}</div>
+       <div class="tt-row">${gap < 0 ? "Overconfident" : gap > 0 ? "Underconfident" : "Well calibrated"} by ${Math.abs(gap * 100).toFixed(0)} pts</div>`));
+    hit.addEventListener("mouseleave", hideTip);
+    svg.appendChild(hit);
+  });
+  host.appendChild(svg);
+}
+
+/* -------------------------------------------------------------- tables */
+function table(headers, rows) {
+  if (!rows.length) return `<div class="empty">Nothing here yet.</div>`;
+  return `<table><thead><tr>${headers.map(h =>
+    `<th class="${h.num ? "num" : ""}">${h.label}</th>`).join("")}</tr></thead>
+    <tbody>${rows.join("")}</tbody></table>`;
+}
+
+function renderPositions(p) {
+  const rows = p.map(r => `<tr>
+    <td class="sym">${r.ticker}</td>
+    <td class="num">${r.quantity}</td>
+    <td class="num">${money(r.average_cost)}</td>
+    <td class="num">${money(r.last_price)}${r.priced ? "" : ' <span class="muted" title="provider lookup failed; marked at cost">stale</span>'}</td>
+    <td class="num">${money(r.market_value)}</td>
+    <td class="num">${delta(r.unrealized_pct)}</td>
+    <td class="num">${pct(r.weight)}</td></tr>`);
+  $("positions").innerHTML = table(
+    [{ label: "Ticker" }, { label: "Qty", num: 1 }, { label: "Avg cost", num: 1 },
+     { label: "Last", num: 1 }, { label: "Value", num: 1 },
+     { label: "Unrealised", num: 1 }, { label: "Weight", num: 1 }], rows);
+}
+
+function renderPredictions() {
+  const d = STATE.predictions;
+  const list = predFilter === "open" ? d.open
+    : predFilter === "resolved" ? d.resolved
+    : d.open.concat(d.resolved);
+
+  const rows = list.map(p => {
+    const outcome = p.status === "open"
+      ? `<span class="muted">resolves ${p.resolves}</span>`
+      : p.correct
+        ? `<span class="pos">✓ hit</span>`
+        : `<span class="neg">✗ miss</span>`;
+    return `<tr>
+      <td class="muted">#${p.id}</td>
+      <td class="sym">${p.ticker}</td>
+      <td><span class="chip ${p.direction === "up" ? "up" : p.direction === "down" ? "down" : ""}">${p.direction.toUpperCase()}</span></td>
+      <td class="num">${pct(p.confidence, 0)}</td>
+      <td class="num">${p.horizon_sessions}d</td>
+      <td>${p.agent}</td>
+      <td class="num">${money(p.entry_price)}</td>
+      <td class="num">${p.realized_return == null ? "—" : delta(p.realized_return)}</td>
+      <td>${outcome}</td>
+      <td class="wrapcell"><details class="rationale"><summary>rationale</summary>${p.rationale}</details></td>
+    </tr>`;
+  });
+
+  $("predictions").innerHTML = table(
+    [{ label: "#" }, { label: "Ticker" }, { label: "Call" }, { label: "Conf.", num: 1 },
+     { label: "Horizon", num: 1 }, { label: "Analyst" }, { label: "Entry", num: 1 },
+     { label: "Move", num: 1 }, { label: "Outcome" }, { label: "" }], rows);
+}
+
+function renderFills(fills) {
+  const rows = fills.slice(0, 25).map(f => `<tr>
+    <td class="muted">${f.filled_at.slice(0, 10)}</td>
+    <td class="sym">${f.ticker}</td>
+    <td><span class="chip ${f.side === "buy" ? "up" : "down"}">${f.side.toUpperCase()}</span></td>
+    <td class="num">${f.quantity}</td>
+    <td class="num">${money(f.price)}</td>
+    <td>${f.agent}</td>
+    <td class="wrapcell">${f.note || '<span class="muted">— no note</span>'}</td></tr>`);
+  $("fills").innerHTML = table(
+    [{ label: "Date" }, { label: "Ticker" }, { label: "Side" }, { label: "Qty", num: 1 },
+     { label: "Price", num: 1 }, { label: "Agent" }, { label: "Note" }], rows);
+}
+
+function renderReports(reports) {
+  const host = $("reports");
+  if (!reports.length) {
+    host.innerHTML = `<div class="empty">No artifacts published yet. Run
+      <code>tradingdesk brief</code>.</div>`;
+    return;
+  }
+  host.innerHTML = reports.map(r =>
+    `<div style="padding:8px 0;border-bottom:1px solid var(--gridline)">
+       <a href="#" data-report="${r.id}" style="color:var(--series-1);text-decoration:none">${r.title}</a>
+       <div class="muted" style="font-size:12px">${r.agent} · ${r.created_at.slice(0, 16).replace("T", " ")}</div>
+     </div>`).join("") + `<div id="report-body"></div>`;
+
+  host.querySelectorAll("[data-report]").forEach(a => {
+    a.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const body = await (await fetch(`/api/reports/${a.dataset.report}`)).text();
+      $("report-body").innerHTML = `<pre class="report">${body
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")}</pre>`;
+    });
+  });
+}
+
+/* ---------------------------------------------------------------- render */
+function render() {
+  const s = STATE, perf = s.performance;
+  $("asof").textContent = `paper book · ${s.as_of} · ${s.watchlist.length} tickers covered`;
+  $("equity").textContent = money(perf.equity, 0);
+  $("equity-delta").innerHTML =
+    `<div style="font-size:16px;font-weight:600">${delta(perf.total_return, v => signedPct(v, 2))}</div>
+     <div class="muted" style="font-size:12px">vs ${money(perf.starting_cash, 0)} start</div>`;
+
+  const tiles = [
+    ["Cash", money(perf.cash, 0)],
+    ["Realised P&L", `<span class="${cls(perf.realized_pnl)}">${arrow(perf.realized_pnl)}${money(Math.abs(perf.realized_pnl))}</span>`],
+    ["Unrealised P&L", `<span class="${cls(perf.unrealized_pnl)}">${arrow(perf.unrealized_pnl)}${money(Math.abs(perf.unrealized_pnl))}</span>`],
+    ["Gross exposure", pct(perf.gross_exposure_pct)],
+    ["Max drawdown", `<span class="${perf.max_drawdown < 0 ? "neg" : "flat"}">${pct(perf.max_drawdown, 2)}</span>`],
+    ["Desk hit rate", pct(s.desk.hit_rate)],
+    ["Desk edge / call", delta(s.desk.edge, v => signedPct(v, 2))],
+    ["Open calls", String(s.desk.open)],
+  ];
+  $("kpis").innerHTML = tiles.map(([l, v]) =>
+    `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+
+  drawCurve($("curve"), s.equity_curve, s.starting_cash);
+  drawEdge($("edge"), s.leaderboard);
+  drawCalibration($("calibration"), s.calibration);
+  renderPositions(s.positions);
+  renderPredictions();
+  renderFills(s.fills);
+  renderReports(s.reports);
+}
+
+async function load() {
+  $("asof").textContent = "loading…";
+  const res = await fetch("/api/state");
+  if (!res.ok) { $("asof").textContent = "failed to load"; return; }
+  STATE = await res.json();
+  render();
+}
+
+$("refresh").addEventListener("click", load);
+$("theme").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "dark" ? "light" : cur === "light" ? "dark" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  if (STATE) render();
+});
+$("pred-filters").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-f]");
+  if (!b) return;
+  predFilter = b.dataset.f;
+  [...e.currentTarget.querySelectorAll("button")].forEach(x =>
+    x.setAttribute("aria-pressed", String(x === b)));
+  renderPredictions();
+});
+
+/* ?theme=light|dark deep-links a mode; otherwise the OS setting decides. */
+const themeParam = new URLSearchParams(location.search).get("theme");
+if (themeParam === "light" || themeParam === "dark") {
+  document.documentElement.setAttribute("data-theme", themeParam);
+}
+
+let resizeTimer;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (STATE) render(); }, 140);
+});
+
+load();
+</script>
+</body>
+</html>
